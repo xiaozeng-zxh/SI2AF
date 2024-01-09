@@ -7,6 +7,10 @@ To run the code, you need the FakeNewsNet dataset. Please send an email to us wi
 ## Run the code
 
 ```bash
-cd SI
+# To run the two random baselines:
+
+python attack_base.py
+
+# To run the SI2AF framework:
 
 python attack.py
