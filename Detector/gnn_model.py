@@ -30,52 +30,54 @@ class Model(torch.nn.Module):
             if self.num_layers == 2:
                 self.conv1 = GATConv(self.num_features, self.nhid * 2)
                 self.conv2 = GATConv(self.nhid * 2, self.nhid)
-        # Bi-GCN 层的初始化
         elif self.model == 'bi-gcn':
-            self.conv1_news = GCNConv(self.num_features, self.nhid)
-            self.conv1_user = GCNConv(self.num_features, self.nhid)
+            self.conv_td1 = GCNConv(self.num_features, self.nhid)
+            self.conv_bu1 = GCNConv(self.num_features, self.nhid)
             if self.num_layers == 2:
-                self.conv2_news = GCNConv(self.nhid, self.nhid)
-                self.conv2_user = GCNConv(self.nhid, self.nhid)
-        # GCAN 层的初始化
+                self.conv_td2 = GCNConv(self.nhid, self.nhid)
+                self.conv_bu2 = GCNConv(self.nhid, self.nhid)
+            self.dropout_rate = args.dropout_rate if hasattr(args, "dropout_rate") else 0.2
         elif self.model == 'gcan':
             self.gat1 = GATConv(self.num_features, self.nhid)
             if self.num_layers == 2:
                 self.gat2 = GATConv(self.nhid, self.nhid)
-            # 简单的协同注意力机制，可以根据需要进行更复杂的设计
             self.co_att = torch.nn.Linear(self.nhid, self.nhid)
 
         self.lin1 = torch.nn.Linear(self.nhid, self.num_classes)
 
     def forward(self, data):
-
         x, edge_index = data.x, data.edge_index
 
-        if self.model == 'gcn' or self.model == 'sage' or self.model == 'gat':
-
+        if self.model in ['gcn', 'sage', 'gat']:
             edge_attr = None
-
             x = F.relu(self.conv1(x, edge_index, edge_attr))
             if self.num_layers == 2:
                 x = F.relu(self.conv2(x, edge_index, edge_attr))
-        
+
         elif self.model == 'bi-gcn':
-            # Bi-GCN 前向传播逻辑
-            x_news = F.relu(self.conv1_news(x, edge_index))
-            x_user = F.relu(self.conv1_user(x, edge_index))
+            edge_index_td = data.edge_index_td
+            edge_index_bu = data.edge_index_bu
+            x_td = F.relu(self.conv_td1(x, edge_index_td))
+            x_bu = F.relu(self.conv_bu1(x, edge_index_bu))
+
             if self.num_layers == 2:
-                x_news = F.relu(self.conv2_news(x_news, edge_index))
-                x_user = F.relu(self.conv2_user(x_user, edge_index))
-            # 合并新闻和用户的特征，此处只是一个简单的例子，实际应用中可能需要不同的合并策略
-            x = x_news + x_user
+                x_td = F.relu(self.conv_td2(x_td, edge_index_td))
+                x_bu = F.relu(self.conv_bu2(x_bu, edge_index_bu))
+
+            if self.training:
+                mask = torch.rand_like(x_td) > self.dropout_rate
+                x_td = x_td * mask
+                x_bu = x_bu * mask
+
+            x_combined = x_td + x_bu
+
+            x = x_combined + x
 
         elif self.model == 'gcan':
-            # GCAN 前向传播逻辑
             x = F.relu(self.gat1(x, edge_index))
             if self.num_layers == 2:
                 x = F.relu(self.gat2(x, edge_index))
-            x = F.relu(self.co_att(x))  # 协同注意力机制
+            x = F.relu(self.co_att(x))
 
         x = F.log_softmax(self.lin1(x), dim=-1)
-
         return x
